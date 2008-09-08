@@ -109,9 +109,6 @@ def make_app(config):
                 return HttpResponse('failed auth check')
         return _do
 
-    def missing(request):
-        return HttpResponse('missing')
-
     def success(request):
         request_token_record = OAuthUserToken.objects.get(type=OAuthUserToken.REQUEST_TOKEN, key=request.REQUEST['oauth_token'])
         request_token = oauth.OAuthToken(request_token_record.key, request_token_record.secret)
@@ -160,17 +157,9 @@ def make_app(config):
     # dynamic module
     views = types.ModuleType('views')
     views.success = success
-    views.missing = missing
-
-    urls = types.ModuleType('urls')
-    urls.urlpatterns = patterns('',
-        url(r'^/success/', views.success, name=NAME + '_success'),
-        url(r'^/missing/', views.missing, name=NAME + '_missing'),
-    )
 
     app = types.ModuleType(NAME + '_oauth')
     app.views = views
-    app.urls = urls
     app.make_signed_req = make_signed_req
     app.validate_signature = validate_signature
     app.require_access_token = require_access_token
