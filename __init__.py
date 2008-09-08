@@ -8,7 +8,6 @@ from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse
 from django_oauth.models import OAuthUserToken
 
-# use to provide access_token for require_access_token decoration
 
 def make_app(config):
     """
@@ -109,8 +108,8 @@ def make_app(config):
                 return HttpResponse('failed auth check')
         return _do
 
-    def success(request):
-        request_token_record = OAuthUserToken.objects.get(type=OAuthUserToken.REQUEST_TOKEN, key=request.REQUEST['oauth_token'])
+    def success(request, oauth_token=None):
+        request_token_record = OAuthUserToken.objects.get(type=OAuthUserToken.REQUEST_TOKEN, key=oauth_token)
         request_token = oauth.OAuthToken(request_token_record.key, request_token_record.secret)
         response = make_signed_req(ACCESS_TOKEN_URL, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
@@ -141,7 +140,7 @@ def make_app(config):
                         secret=request_token.secret)
                 qs = urllib.urlencode({
                     'oauth_token': request_token.key,
-                    'oauth_callback': request.build_absolute_uri(reverse(NAME + '_success')),
+                    'oauth_callback': request.build_absolute_uri(reverse(NAME + '_success', kwargs={'oauth_token': request_token.key})),
                 })
                 url = AUTHORIZATION_URL
                 if '?' in url:
@@ -151,7 +150,7 @@ def make_app(config):
                         url += '&' + qs
                 else:
                     url += '?' + qs
-                return render('django_oauth/need_authorization.html', {'authorization_url': url})
+                return render('django_oauth/' + NAME + '/need_authorization.html', {'authorization_url': url})
         return _do
 
     # dynamic module
