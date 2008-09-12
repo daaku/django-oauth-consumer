@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse
 from django_oauth.models import OAuthUserToken
+from make_request import make_request
 
 
 def make_app(config):
@@ -28,7 +29,7 @@ def make_app(config):
     CONSUMER = oauth.OAuthConsumer(CONSUMER_KEY, CONSUMER_SECRET)
     SIG_METHOD = oauth.OAuthSignatureMethod_HMAC_SHA1()
 
-    def make_signed_req(url, method='GET', parameters={}, token=None):
+    def make_signed_req(url, method='GET', parameters={}, headers={}, token=None):
         """
         The url is broken down and query parameters are extracted. These are merged
         with the optional parameters argument. Values in the parameters argument
@@ -40,13 +41,6 @@ def make_app(config):
         """
 
         parts = urlparse(url)
-        if parts.scheme == 'https':
-            log.debug('Using HTTPSConnection')
-            connection = httplib.HTTPSConnection(parts.netloc)
-        else:
-            log.debug('Using HTTPSConnection')
-            connection = httplib.HTTPConnection(parts.netloc)
-
         # drop the query string and use it if it exists
         url = parts.scheme + '://' + parts.netloc + parts.path
         if parts.query != '':
@@ -61,27 +55,8 @@ def make_app(config):
                 http_url=url,
                 parameters=parameters)
         request.sign_request(SIG_METHOD, CONSUMER, token)
-
-        method = request.get_normalized_http_method()
-        headers = request.to_header()
-        url = request.get_normalized_http_url()
-        data = '&'.join('%s=%s' % (oauth.escape(str(k)), oauth.escape(str(v))) for k, v in request.get_nonoauth_parameters().iteritems())
-        body = None
-
-        if data and data != '':
-            if request.get_normalized_http_method() == 'POST':
-                headers['Content-Type'] = 'application/x-www-form-urlencoded'
-                body = data
-            else:
-                url = url + '?' + data
-
-        log.debug('Method: ' + str(method))
-        log.debug('Url: ' + str(url))
-        log.debug('Body: ' + str(body))
-        log.debug('Headers: ' + str(headers))
-
-        connection.request(method, url, body, headers)
-        return connection.getresponse()
+        headers.update(request.to_header())
+        return make_request(url, method=method, parameters=parameters, headers=headers)
 
     def validate_signature(view):
         def _do(*args, **kwargs):
