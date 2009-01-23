@@ -6,7 +6,7 @@ from django.conf.urls.defaults import patterns, url
 from django.http import HttpResponse
 from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse
-from django_oauth.models import OAuthUserToken
+from django_oauth_consumer.models import OAuthUserToken
 
 
 class OAuthConsumerApp(object):
@@ -92,7 +92,7 @@ class OAuthConsumerApp(object):
         the access token available as request.{NAME}_access_token where NAME
         was defined in the instance configuration. If an Access Token is not
         available, it will render a templated called:
-            "django_oauth/{NAME}/need_authorization.html"
+            "django_oauth_consumer/{NAME}/need_authorization.html"
 
         """
         def _do(*args, **kwargs):
@@ -123,7 +123,7 @@ class OAuthConsumerApp(object):
                         url += '&' + qs
                 else:
                     url += '?' + qs
-                return render('django_oauth/' + self.name + '/need_authorization.html', {'authorization_url': url})
+                return render('django_oauth_consumer/' + self.name + '/need_authorization.html', {'authorization_url': url})
         return _do
 
     def success_auth(self, request, oauth_token=None):
