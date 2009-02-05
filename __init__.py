@@ -1,4 +1,5 @@
 import urllib, urlparse, cgi, logging
+from functools import wraps
 import oauth
 from make_request import make_request
 
@@ -6,7 +7,7 @@ from django.conf.urls.defaults import patterns, url
 from django.http import HttpResponse
 from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse
-from django_oauth_consumer.models import OAuthUserToken
+from django.dispatch import Signal
 
 
 class OAuthConsumerApp(object):
@@ -17,16 +18,18 @@ class OAuthConsumerApp(object):
 
     def __init__(self, config):
         self.name = config['name']
-
-        self.consumer_key = config['consumer_key']
-        self.consumer_secret = config['consumer_secret']
-
+        self.consumer = oauth.OAuthConsumer(config.get('consumer_key'), config.get('consumer_secret'))
         self.request_token_url = config.get('request_token_url')
         self.authorization_url = config.get('authorization_url')
         self.access_token_url = config.get('access_token_url')
 
-        self.consumer = oauth.OAuthConsumer(self.consumer_key, self.consumer_secret)
-        self.sig_method = oauth.OAuthSignatureMethod_HMAC_SHA1()
+        try:
+            method = config.get('signature_method', 'HMAC_SHA1')
+            self.sig_method = getattr(oauth, 'OAuthSignatureMethod_' + method)()
+        except KeyError:
+            raise UnknownSignatureMethod()
+
+        self.got_access_token = Signal(providing_args=["service_provider", "access_token", "request"])
 
     def make_signed_req(self, url, method='GET', parameters={}, headers={}, token=None):
         """
@@ -40,6 +43,7 @@ class OAuthConsumerApp(object):
         # drop the query string and use it if it exists
         url = parts.scheme + '://' + parts.netloc + parts.path
         if parts.query != '':
+            #FIXME: only using v[0]
             qs_params = dict([(k, v[0]) for k, v in cgi.parse_qs(parts.query).iteritems()])
             qs_params.update(parameters)
             parameters = qs_params
@@ -54,35 +58,39 @@ class OAuthConsumerApp(object):
         headers.update(request.to_header())
         return make_request(url, method=method, parameters=parameters, headers=headers)
 
+    def is_valid_signature(self, request):
+        # create a new dict with the Authorization key that
+        # OAuthRequest.from_request expects.
+        if 'HTTP_AUTHORIZATION' in request.META:
+            headers = {'Authorization': request.META['HTTP_AUTHORIZATION']}
+        else:
+            headers = {}
+
+        oauth_request = oauth.OAuthRequest.from_request(
+            request.method,
+            request.build_absolute_uri(request.path),
+            headers,
+            dict(request.REQUEST.items()))
+
+        # FIXME signature may be in the auth header
+        if not 'oauth_signature' in request.REQUEST:
+            return False
+        if self.sig_method.check_signature(oauth_request, self.consumer, None, request.REQUEST['oauth_signature']):
+            return True
+        else:
+            return False
+
     def validate_signature(self, view):
         """
-        A decorator for Django views to require a signed request.
+        A decorator for Django views to validate incoming signed requests.
 
         """
-
-        def _do(*args, **kwargs):
-            logging.debug('validate_signature inner _do')
-            request = args[0]
-
-            # create a new dict with the Authorization key that
-            # OAuthRequest.from_request expects.
-            if 'HTTP_AUTHORIZATION' in request.META:
-                headers = {'Authorization': request.META['HTTP_AUTHORIZATION']}
+        @wraps(view)
+        def _do(request, *args, **kwargs):
+            if self.is_valid_signature(request):
+                return view(request, *args, **kwargs)
             else:
-                headers = {}
-
-            oauth_request = oauth.OAuthRequest.from_request(
-                request.method,
-                request.build_absolute_uri(request.path),
-                headers,
-                dict(request.REQUEST.items()))
-
-            # FIXME signature may be in the auth header
-            if not 'oauth_signature' in request.REQUEST:
-                return HttpResponse('no signature')
-            if self.sig_method.check_signature(oauth_request, self.consumer, None, request.REQUEST['oauth_signature']):
-                return view(*args, **kwargs)
-            else:
+                #FIXME
                 return HttpResponse('failed auth check')
         return _do
 
@@ -95,22 +103,16 @@ class OAuthConsumerApp(object):
             "django_oauth_consumer/{NAME}/need_authorization.html"
 
         """
-        def _do(*args, **kwargs):
-            request = args[0]
-            logging.info('require_access_token inner _do')
-            try:
-                access_token = OAuthUserToken.objects.get(service_provider=self.name, user=request.user, type=OAuthUserToken.ACCESS_TOKEN)
-                setattr(request, self.name + '_access_token', oauth.OAuthToken(access_token.key, access_token.secret))
-                return view(*args, **kwargs)
-            except OAuthUserToken.DoesNotExist:
+        @wraps(view)
+        def _do(request, *args, **kwargs):
+            access_token_key = self.name + '_access_token'
+            if access_token_key in request.session:
+                return view(request, *args, **kwargs)
+            else:
                 response = self.make_signed_req(self.request_token_url)
-                request_token = oauth.OAuthToken.from_string(unicode(response.read(), 'utf8').strip())
-                OAuthUserToken.objects.create(
-                        service_provider=self.name,
-                        user=request.user,
-                        type=OAuthUserToken.REQUEST_TOKEN,
-                        key=request_token.key,
-                        secret=request_token.secret)
+                body = unicode(response.read(), 'utf8').strip()
+                request_token = oauth.OAuthToken.from_string(body)
+                request.session[self.name + '_request_token'] = request_token
                 qs = urllib.urlencode({
                     'oauth_token': request_token.key,
                     'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token.key})),
@@ -132,16 +134,23 @@ class OAuthConsumerApp(object):
         user's side. The Service Provider redirect returns the user here.
 
         """
-        request_token_record = OAuthUserToken.objects.get(service_provider=self.name, type=OAuthUserToken.REQUEST_TOKEN, key=oauth_token)
-        request_token = oauth.OAuthToken(request_token_record.key, request_token_record.secret)
+        request_token_key = self.name + '_request_token'
+        access_token_key = self.name + '_access_token'
+
+        request_token = request.session[request_token_key]
+        if request_token.key != oauth_token:
+            log.error('request token in session and url dont match')
         response = self.make_signed_req(self.access_token_url, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
         access_token = oauth.OAuthToken.from_string(body)
-        OAuthUserToken.objects.create(
-                service_provider=self.name,
-                user=request_token_record.user,
-                type=OAuthUserToken.ACCESS_TOKEN,
-                key=access_token.key,
-                secret=access_token.secret)
-        request_token_record.delete()
+        request.session[access_token_key] = access_token
+        del request.session[request_token_key]
+
+        self.got_access_token.send(
+            sender=self,
+            service_provider=self.name,
+            access_token=access_token,
+            request=request,
+        )
+
         return HttpResponse('success!')
