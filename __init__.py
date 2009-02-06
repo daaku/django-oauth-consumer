@@ -4,7 +4,7 @@ import oauth
 from make_request import make_request
 
 from django.conf.urls.defaults import patterns, url
-from django.http import HttpResponse
+from django.template import RequestContext
 from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse
 from django.dispatch import Signal
@@ -30,6 +30,16 @@ class OAuthConsumerApp(object):
             raise UnknownSignatureMethod()
 
         self.got_access_token = Signal(providing_args=["service_provider", "access_token", "request"])
+
+    @property
+    def urls(self):
+        return patterns('',
+            url(r'^success/(?P<oauth_token>[^/]*)/', self.success_auth, name=self.name + '_success'),
+        )
+
+    def render(self, template, request, context):
+        path = 'django_oauth_consumer/%s/%s.html' % (self.name, template)
+        return render(path, context, context_instance=RequestContext(request))
 
     def make_signed_req(self, url, method='GET', parameters={}, headers={}, token=None):
         """
@@ -72,10 +82,12 @@ class OAuthConsumerApp(object):
             headers,
             dict(request.REQUEST.items()))
 
-        # FIXME signature may be in the auth header
-        if not 'oauth_signature' in request.REQUEST:
-            return False
-        if self.sig_method.check_signature(oauth_request, self.consumer, None, request.REQUEST['oauth_signature']):
+        try:
+            oauth_signature = oauth_request.get_parameter('oauth_signature')
+        except oauth.OAuthError:
+            return False # no signature
+
+        if self.sig_method.check_signature(oauth_request, self.consumer, None, oauth_signature):
             return True
         else:
             return False
@@ -90,8 +102,7 @@ class OAuthConsumerApp(object):
             if self.is_valid_signature(request):
                 return view(request, *args, **kwargs)
             else:
-                #FIXME
-                return HttpResponse('failed auth check')
+                return self.render('invalid_signature', request)
         return _do
 
     def require_access_token(self, view):
@@ -125,7 +136,7 @@ class OAuthConsumerApp(object):
                         url += '&' + qs
                 else:
                     url += '?' + qs
-                return render('django_oauth_consumer/' + self.name + '/need_authorization.html', {'authorization_url': url})
+                return self.render('need_authorization', request, {'authorization_url': url})
         return _do
 
     def success_auth(self, request, oauth_token=None):
@@ -153,4 +164,4 @@ class OAuthConsumerApp(object):
             request=request,
         )
 
-        return HttpResponse('success!')
+        return self.render('successful_authorization', request, {'access_token': access_token})
