@@ -87,10 +87,7 @@ class OAuthConsumerApp(object):
         except oauth.OAuthError:
             return False # no signature
 
-        if self.sig_method.check_signature(oauth_request, self.consumer, None, oauth_signature):
-            return True
-        else:
-            return False
+        return self.sig_method.check_signature(oauth_request, self.consumer, None, oauth_signature)
 
     def validate_signature(self, view):
         """
