@@ -105,9 +105,9 @@ class OAuthConsumerApp(object):
     def require_access_token(self, view):
         """
         A decorator for Django views that require an Access Token. It will make
-        the access token available as request.{NAME}_access_token where NAME
-        was defined in the instance configuration. If an Access Token is not
-        available, it will render a templated called:
+        the access token available as request.session['{NAME}_access_token']
+        where NAME was defined in the instance configuration. If an Access
+        Token is not available, it will render a templated called:
             "django_oauth_consumer/{NAME}/need_authorization.html"
 
         """
@@ -147,7 +147,7 @@ class OAuthConsumerApp(object):
 
         request_token = request.session[request_token_key]
         if request_token.key != oauth_token:
-            log.error('request token in session and url dont match')
+            logging.error('request token in session and url dont match')
         response = self.make_signed_req(self.access_token_url, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
         access_token = oauth.OAuthToken.from_string(body)
