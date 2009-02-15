@@ -36,7 +36,7 @@ class OAuthConsumerApp(object):
     @property
     def urls(self):
         return patterns('',
-            url(r'^success/(?P<oauth_token>[^/]*)/', self.success_auth, name=self.name + '_success'),
+            url(r'^success/(?P<oauth_token>.*)/', self.success_auth, name=self.name + '_success'),
         )
 
     def render(self, template, request, context):
