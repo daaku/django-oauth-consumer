@@ -6,8 +6,11 @@ from make_request import make_request
 from django.conf.urls.defaults import patterns, url
 from django.template import RequestContext
 from django.shortcuts import render_to_response as render
-from django.core.urlresolvers import reverse
+from django.core.urlresolvers import reverse, get_callable
 from django.dispatch import Signal
+
+
+DEFAULT_SIGNATURE_METHOD = 'oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1'
 
 
 class OAuthConsumerApp(object):
@@ -18,14 +21,13 @@ class OAuthConsumerApp(object):
 
     def __init__(self, config):
         self.name = config['name']
-        self.consumer = oauth.OAuthConsumer(config.get('consumer_key'), config.get('consumer_secret'))
+        self.consumer = {'oauth_token': config.get('consumer_key'), 'oauth_token_secret': config.get('consumer_secret')}
         self.request_token_url = config.get('request_token_url')
         self.authorization_url = config.get('authorization_url')
         self.access_token_url = config.get('access_token_url')
 
         try:
-            method = config.get('signature_method', 'HMAC_SHA1')
-            self.sig_method = getattr(oauth, 'OAuthSignatureMethod_' + method)()
+            self.sig_method = get_callable(config.get('signature_method', DEFAULT_SIGNATURE_METHOD))
         except KeyError:
             raise UnknownSignatureMethod()
 
@@ -58,14 +60,9 @@ class OAuthConsumerApp(object):
             qs_params.update(parameters)
             parameters = qs_params
 
-        request = oauth.OAuthRequest.from_consumer_and_token(
-                self.consumer,
-                token=token,
-                http_method=method,
-                http_url=url,
-                parameters=parameters)
+        request = oauth.OAuthRequest(url, method, parameters)
         request.sign_request(self.sig_method, self.consumer, token)
-        headers.update(request.to_header())
+        headers['Authorization'] = request.to_header()
         return make_request(url, method=method, parameters=parameters, headers=headers)
 
     def is_valid_signature(self, request):
@@ -76,18 +73,14 @@ class OAuthConsumerApp(object):
         else:
             headers = {}
 
-        oauth_request = oauth.OAuthRequest.from_request(
-            request.method,
+        oauth_request = oauth.OAuthRequest(
             request.build_absolute_uri(request.path),
+            request.method,
+            dict(request.REQUEST.items()),
             headers,
-            dict(request.REQUEST.items()))
+        )
 
-        try:
-            oauth_signature = oauth_request.get_parameter('oauth_signature')
-        except oauth.OAuthError:
-            return False # no signature
-
-        return self.sig_method.check_signature(oauth_request, self.consumer, None, oauth_signature)
+        oauth_request.validate_signature(self.sig_method, self.consumer)
 
     def validate_signature(self, view):
         """
@@ -96,10 +89,12 @@ class OAuthConsumerApp(object):
         """
         @wraps(view)
         def _do(request, *args, **kwargs):
-            if self.is_valid_signature(request):
+            try:
+                self.is_valid_signature(request)
                 return view(request, *args, **kwargs)
-            else:
-                return self.render('invalid_signature', request)
+            except oauth.OAuthError, e:
+                logging.info('Invalid Signature')
+                return self.render('invalid_signature', request, {'error': e})
         return _do
 
     def require_access_token(self, view):
@@ -119,11 +114,11 @@ class OAuthConsumerApp(object):
             else:
                 response = self.make_signed_req(self.request_token_url)
                 body = unicode(response.read(), 'utf8').strip()
-                request_token = oauth.OAuthToken.from_string(body)
+                request_token = oauth.parse_qs(body)
                 request.session[self.name + '_request_token'] = request_token
                 qs = urllib.urlencode({
-                    'oauth_token': request_token.key,
-                    'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token.key})),
+                    'oauth_token': request_token['oauth_token'],
+                    'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token['oauth_token']})),
                 })
                 url = self.authorization_url
                 if '?' in url:
@@ -146,11 +141,11 @@ class OAuthConsumerApp(object):
         access_token_key = self.name + '_access_token'
 
         request_token = request.session[request_token_key]
-        if request_token.key != oauth_token:
+        if request_token['oauth_token'] != oauth_token:
             logging.error('request token in session and url dont match')
         response = self.make_signed_req(self.access_token_url, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
-        access_token = oauth.OAuthToken.from_string(body)
+        access_token = oauth.parse_qs(body)
         request.session[access_token_key] = access_token
         del request.session[request_token_key]
 
