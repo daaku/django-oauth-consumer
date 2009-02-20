@@ -25,6 +25,7 @@ class OAuthConsumerApp(object):
         self.request_token_url = config.get('request_token_url')
         self.authorization_url = config.get('authorization_url')
         self.access_token_url = config.get('access_token_url')
+        self.realm = config.get('realm')
 
         try:
             self.sig_method = get_callable(config.get('signature_method', DEFAULT_SIGNATURE_METHOD))
@@ -62,7 +63,7 @@ class OAuthConsumerApp(object):
 
         request = oauth.OAuthRequest(url, method, parameters)
         request.sign_request(self.sig_method, self.consumer, token)
-        headers['Authorization'] = request.to_header()
+        headers['Authorization'] = request.to_header(self.realm)
         return make_request(url, method=method, content=parameters, headers=headers)
 
     def is_valid_signature(self, request):
