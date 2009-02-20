@@ -63,7 +63,7 @@ class OAuthConsumerApp(object):
         request = oauth.OAuthRequest(url, method, parameters)
         request.sign_request(self.sig_method, self.consumer, token)
         headers['Authorization'] = request.to_header()
-        return make_request(url, method=method, parameters=parameters, headers=headers)
+        return make_request(url, method=method, content=parameters, headers=headers)
 
     def is_valid_signature(self, request):
         # create a new dict with the Authorization key that
