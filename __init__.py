@@ -46,7 +46,7 @@ class OAuthConsumerApp(object):
         path = 'django_oauth_consumer/%s/%s.html' % (self.name, template)
         return render(path, context, context_instance=RequestContext(request))
 
-    def make_signed_req(self, url, method='GET', parameters={}, headers={}, token=None):
+    def make_signed_req(self, url, method='GET', parameters={}, headers={}, token=None, request=None):
         """
         Identical to the make_request API, and accepts an additional (optional)
         token parameter. It adds the OAuth Authorization header based on the
@@ -63,10 +63,33 @@ class OAuthConsumerApp(object):
             qs_params.update(parameters)
             parameters = qs_params
 
-        request = oauth.OAuthRequest(url, method, parameters)
-        request.sign_request(self.sig_method, self.consumer, token)
-        headers['Authorization'] = request.to_header(self.realm)
-        return make_request(url, method=method, content=parameters, headers=headers)
+        orequest = oauth.OAuthRequest(url, method, parameters)
+        orequest.sign_request(self.sig_method, self.consumer, token)
+        headers['Authorization'] = orequest.to_header(self.realm)
+        response = make_request(url, method=method, content=parameters, headers=headers)
+
+        www_auth = response.getheader('www-authenticate', None)
+        if www_auth and response.status == 401 and 'token_expired' in www_auth:
+            response = self.make_signed_req(
+                self.access_token_url,
+                parameters={'oauth_session_handle': token['oauth_session_handle']},
+                token=token,
+                request=request
+            )
+            body = unicode(response.read(), 'utf8').strip()
+            new_token = oauth.parse_qs(body)
+            request.session[self.name + '_access_token'] = new_token
+
+            self.got_access_token.send(
+                sender=self,
+                service_provider=self.name,
+                access_token=new_token,
+                request=request,
+            )
+
+            return self.make_signed_req(url, method, parameters, headers, new_token, request)
+        else:
+            return response
 
     def is_valid_signature(self, request):
         # create a new dict with the Authorization key that
