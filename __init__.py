@@ -8,6 +8,7 @@ from django.template import RequestContext
 from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse, get_callable
 from django.dispatch import Signal
+from django.http import HttpResponseRedirect
 
 
 DEFAULT_SIGNATURE_METHOD = 'oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1'
@@ -37,6 +38,7 @@ class OAuthConsumerApp(object):
     @property
     def urls(self):
         return patterns('',
+            url(r'^auth/', self.need_authorization, name=self.name + '_needs_auth'),
             url(r'^success/(?P<oauth_token>.*)/', self.success_auth, name=self.name + '_success'),
         )
 
@@ -103,8 +105,7 @@ class OAuthConsumerApp(object):
         A decorator for Django views that require an Access Token. It will make
         the access token available as request.session['{NAME}_access_token']
         where NAME was defined in the instance configuration. If an Access
-        Token is not available, it will render a templated called:
-            "django_oauth_consumer/{NAME}/need_authorization.html"
+        Token is not available, it will redirect to need_authorization.
 
         """
         @wraps(view)
@@ -113,24 +114,35 @@ class OAuthConsumerApp(object):
             if access_token_key in request.session:
                 return view(request, *args, **kwargs)
             else:
-                response = self.make_signed_req(self.request_token_url)
-                body = unicode(response.read(), 'utf8').strip()
-                request_token = oauth.parse_qs(body)
-                request.session[self.name + '_request_token'] = request_token
-                qs = urllib.urlencode({
-                    'oauth_token': request_token['oauth_token'],
-                    'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token['oauth_token']})),
-                })
-                url = self.authorization_url
-                if '?' in url:
-                    if url[-1] == '&':
-                        url += qs
-                    else:
-                        url += '&' + qs
-                else:
-                    url += '?' + qs
-                return self.render('need_authorization', request, {'authorization_url': url})
+                request.session[self.name + '_next_url'] = request.get_full_path()
+                return HttpResponseRedirect(reverse(self.name + '_needs_auth'))
+
         return _do
+
+    def need_authorization(self, request):
+        """
+        Renders
+            "django_oauth_consumer/{NAME}/need_authorization.html"
+
+        """
+
+        response = self.make_signed_req(self.request_token_url)
+        body = unicode(response.read(), 'utf8').strip()
+        request_token = oauth.parse_qs(body)
+        request.session[self.name + '_request_token'] = request_token
+        qs = urllib.urlencode({
+            'oauth_token': request_token['oauth_token'],
+            'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token['oauth_token']})),
+        })
+        url = self.authorization_url
+        if '?' in url:
+            if url[-1] == '&':
+                url += qs
+            else:
+                url += '&' + qs
+        else:
+            url += '?' + qs
+        return self.render('need_authorization', request, {'authorization_url': url})
 
     def success_auth(self, request, oauth_token=None):
         """
@@ -157,4 +169,7 @@ class OAuthConsumerApp(object):
             request=request,
         )
 
-        return self.render('successful_authorization', request, {'access_token': access_token})
+        return self.render('successful_authorization', request, {
+            'access_token': access_token,
+            'next_url': request.session[self.name + '_next_url'],
+        })
