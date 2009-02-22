@@ -1,6 +1,7 @@
 import urllib, urlparse, cgi, logging
 from functools import wraps
 import oauth
+import collections
 from make_request import make_request
 
 from django.conf.urls.defaults import patterns, url
@@ -46,33 +47,30 @@ class OAuthConsumerApp(object):
         path = 'django_oauth_consumer/%s/%s.html' % (self.name, template)
         return render(path, context, context_instance=RequestContext(request))
 
-    def make_signed_req(self, url, method='GET', parameters={}, headers={}, token=None, request=None):
+    def make_signed_req(self, url, method='GET', content={}, headers={}, token=None, request=None):
         """
         Identical to the make_request API, and accepts an additional (optional)
-        token parameter. It adds the OAuth Authorization header based on the
-        consumer set on this instance.
+        token parameter and request object (required if dealing with Scalable
+        OAuth service providers). It adds the OAuth Authorization header based
+        on the consumer set on this instance.
 
         """
 
-        parts = urlparse.urlparse(url)
-        # drop the query string and use it if it exists
-        url = parts.scheme + '://' + parts.netloc + parts.path
-        if parts.query != '':
-            #FIXME: only using v[0]
-            qs_params = dict([(k, v[0]) for k, v in cgi.parse_qs(parts.query).iteritems()])
-            qs_params.update(parameters)
-            parameters = qs_params
+        if isinstance(content, collections.Mapping):
+            params = content
+        else:
+            params = {}
 
-        orequest = oauth.OAuthRequest(url, method, parameters)
+        orequest = oauth.OAuthRequest(url, method, params)
         orequest.sign_request(self.sig_method, self.consumer, token)
         headers['Authorization'] = orequest.to_header(self.realm)
-        response = make_request(url, method=method, content=parameters, headers=headers)
+        response = make_request(url, method=method, content=content, headers=headers)
 
         www_auth = response.getheader('www-authenticate', None)
         if www_auth and response.status == 401 and 'token_expired' in www_auth:
             response = self.make_signed_req(
                 self.access_token_url,
-                parameters={'oauth_session_handle': token['oauth_session_handle']},
+                content={'oauth_session_handle': token['oauth_session_handle']},
                 token=token,
                 request=request
             )
@@ -87,7 +85,7 @@ class OAuthConsumerApp(object):
                 request=request,
             )
 
-            return self.make_signed_req(url, method, parameters, headers, new_token, request)
+            return self.make_signed_req(url, method, content, headers, new_token, request)
         else:
             return response
 
