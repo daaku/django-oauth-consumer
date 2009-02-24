@@ -29,6 +29,12 @@ class OAuthConsumerApp(object):
         self.access_token_url = config.get('access_token_url')
         self.realm = config.get('realm')
 
+        # dynamic constants ;)
+        self.NEEDS_AUTH_VIEW_NAME = self.name + '_needs_auth'
+        self.SUCCESS_VIEW_NAME = self.name + '_success'
+        self.ACCESS_TOKEN_NAME = self.name + '_access_token'
+        self.REQUEST_TOKEN_NAME = self.name + '_request_token'
+
         try:
             self.sig_method = get_callable(config.get('signature_method', DEFAULT_SIGNATURE_METHOD))
         except KeyError:
@@ -39,8 +45,8 @@ class OAuthConsumerApp(object):
     @property
     def urls(self):
         return patterns('',
-            url(r'^auth/', self.need_authorization, name=self.name + '_needs_auth'),
-            url(r'^success/(?P<oauth_token>.*)/', self.success_auth, name=self.name + '_success'),
+            url(r'^auth/', self.need_authorization, name=self.NEEDS_AUTH_VIEW_NAME),
+            url(r'^success/(?P<oauth_token>.*)/', self.success_auth, name=self.SUCCESS_VIEW_NAME),
         )
 
     def render(self, template, request, context):
@@ -131,12 +137,11 @@ class OAuthConsumerApp(object):
         """
         @wraps(view)
         def _do(request, *args, **kwargs):
-            access_token_key = self.name + '_access_token'
-            if access_token_key in request.session:
+            if self.ACCESS_TOKEN_NAME in request.session:
                 return view(request, *args, **kwargs)
             else:
                 request.session[self.name + '_next_url'] = request.get_full_path()
-                return HttpResponseRedirect(reverse(self.name + '_needs_auth'))
+                return HttpResponseRedirect(reverse(self.NEEDS_AUTH_VIEW_NAME))
 
         return _do
 
@@ -153,7 +158,7 @@ class OAuthConsumerApp(object):
         request.session[self.name + '_request_token'] = request_token
         qs = urllib.urlencode({
             'oauth_token': request_token['oauth_token'],
-            'oauth_callback': request.build_absolute_uri(reverse(self.name + '_success', kwargs={'oauth_token': request_token['oauth_token']})),
+            'oauth_callback': request.build_absolute_uri(reverse(self.SUCCESS_VIEW_NAME, kwargs={'oauth_token': request_token['oauth_token']})),
         })
         url = self.authorization_url
         if '?' in url:
@@ -171,17 +176,14 @@ class OAuthConsumerApp(object):
         user's side. The Service Provider redirect returns the user here.
 
         """
-        request_token_key = self.name + '_request_token'
-        access_token_key = self.name + '_access_token'
-
-        request_token = request.session[request_token_key]
+        request_token = request.session[self.REQUEST_TOKEN_NAME]
         if request_token['oauth_token'] != oauth_token:
             logging.error('request token in session and url dont match')
         response = self.make_signed_req(self.access_token_url, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
         access_token = oauth.parse_qs(body)
-        request.session[access_token_key] = access_token
-        del request.session[request_token_key]
+        request.session[self.ACCESS_TOKEN_NAME] = access_token
+        del request.session[self.REQUEST_TOKEN_NAME]
 
         self.got_access_token.send(
             sender=self,
