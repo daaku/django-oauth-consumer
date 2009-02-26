@@ -32,38 +32,45 @@ class OAuthConsumerApp(object):
     Arguments:
 
         `name`
-            *Required*. This is used in making this application instance
-            unique. Make sure you dont use the same name for multiple instances
+            **Required**. This is used in making this application instance
+            unique. Make sure you dont use the same name for different instances
             of OAuthConsumerApp.
 
         `consumer_key`
             The consumer key issued to you by the service provider.
+
             http://oauth.net/core/1.0/#rfc.section.4.3
 
         `consumer_secret`
             The consumer secret issued to you by the service provider.
+
             http://oauth.net/core/1.0/#rfc.section.4.3
 
         `request_token_url`
             The URL to fetch request tokens from.
+
             http://oauth.net/core/1.0/#request_urls
 
         `authorization_url`
             The URL to redirect the user to for obtaining Authorization.
+
             http://oauth.net/core/1.0/#request_urls
 
         `access_token_url`
             The URL to exchange the authorized request token for an access
             token.
 
+            http://oauth.net/core/1.0/#request_urls
+
         `realm`
             Optional realm for the Authorization header.
+
             http://oauth.net/core/1.0/#rfc.section.5.4.2
 
         `signature_method`
             A Signature Method for use with the OAuth flow. Defaults to
 
-                oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1
+                `oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1`
 
     """
 
@@ -157,6 +164,7 @@ class OAuthConsumerApp(object):
             `request`
                 *Optional*. Needed if using Scalable OAuth in order to
                 transparently handle access token renewal.
+
                 http://wiki.oauth.net/ScalableOAuth#AccessTokenRenewal
 
         """
@@ -193,11 +201,13 @@ class OAuthConsumerApp(object):
 
     def is_valid_signature(self, request):
         """
-        Validates the incoming *2 legged* signed request. This is useful for
+        Validates the incoming **2 legged** signed request. This is useful for
         signed requests from OpenSocial Containers such as YAP.
 
         It calls OAuthRequest.validate_signature which throws an OAuthError if
         the signature validation fails.
+
+        **FIXME** Missing nonce validation.
 
         """
         oauth_request = oauth.OAuthRequest(
@@ -211,12 +221,14 @@ class OAuthConsumerApp(object):
     def validate_signature(self, view):
         """
         A decorator for Django views to validate incoming signed requests.
-        This is for *2 legged* signed requests. This is useful for requests
+        This is for **2 legged** signed requests. This is useful for requests
         from OpenSocial Containers such as YAP.
 
         It will render this template when it recieves an invalid signature:
 
             `django_oauth_consumer/{NAME}/invalid_signature.html`
+
+        **FIXME** Missing nonce validation.
 
         """
         @wraps(view)
@@ -231,8 +243,10 @@ class OAuthConsumerApp(object):
 
     def get_access_token(self, request):
         """
+        This must return an access token (a dict) or raise NoAccessToken.
+
         This can be overridden to allow alternate storage mechanisms.
-        Make sure to raise NoAccessToken() if one is not found.
+        Make sure to raise NoAccessToken() if an access token is not found.
 
         Default is session based storage.
 
@@ -244,6 +258,8 @@ class OAuthConsumerApp(object):
 
     def store_access_token(self, request, token):
         """
+        This must store an access token (a dict).
+
         This can be overridden to allow alternate storage mechanisms.
 
         Default is session based storage.
@@ -253,8 +269,8 @@ class OAuthConsumerApp(object):
 
     def start_access_token_flow(self, request):
         """
-        This triggers the access token flow *without* checking if one already
-        exists. That's your job.
+        This triggers the access token flow **without** checking if an access
+        token already exists. That's your job. It returns a HttpResponse.
 
         """
         request.session[self.NEXT_URL_NAME] = request.get_full_path()
@@ -264,7 +280,7 @@ class OAuthConsumerApp(object):
         """
         A decorator for views that require an Access Token. This will ensure
         that you have an access token by automatically triggering the access
-        token flow.
+        token flow if needed before the view gets processed.
 
         """
         @wraps(view)
