@@ -1,80 +1,248 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html lang="en">
+    <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8">
+        <title>Django &middot; OAuth Consumer Documentation</title>
+        <meta name="keywords" content="django, oauth, python, library, signature, signing, validating, hmac, sha, sha1, rsa, plaintext, generating signatures, validating signatures">
+        <meta name="description" content="Django OAuth Consumer Application.">
 
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
-<head>
-	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-
-	<title>nshah/django-oauth-consumer @ GitHub</title>
-	
-	<style type="text/css">
-		body {
-  		margin-top: 1.0em;
-  		background-color: #8c24e6;
-		  font-family: "helvetica"; 
-  		color: #000000;
-    }
-    #container {
-      margin: 0 auto;
-      width: 700px;
-    }
-		h1 { font-size: 3.8em; color: #73db19; margin-bottom: 3px; }
-		h1 .small { font-size: 0.4em; }
-		h1 a { text-decoration: none }
-		h2 { font-size: 1.5em; color: #73db19; }
-    h3 { text-align: center; color: #73db19; }
-    a { color: #73db19; }
-    .description { font-size: 1.2em; margin-bottom: 30px; margin-top: 30px; font-style: italic;}
-    .download { float: right; }
-		pre { background: #000; color: #fff; padding: 15px;}
-    hr { border: 0; width: 80%; border-bottom: 1px solid #aaa}
-    .footer { text-align:center; padding-top:30px; font-style: italic; }
-	</style>
-	
-</head>
-
-<body>
-  <a href="http://github.com/nshah/django-oauth-consumer"><img style="position: absolute; top: 0; right: 0; border: 0;" src="http://s3.amazonaws.com/github/ribbons/forkme_right_darkblue_121621.png" alt="Fork me on GitHub" /></a>
+        <link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/combo?3.0.0pr2/build/cssfonts/fonts-min.css&3.0.0pr2/build/cssreset/reset-min.css&3.0.0pr2/build/cssgrids/grids-min.css&3.0.0pr2/build/cssbase/base-min.css">
+        <link rel="stylesheet" type="text/css" href="/sphinx.css">
+    </head>
+    <body>
+        <div id="document" class="yui-d2">
+        
   
-  <div id="container">
+  <div class="section" id="django-oauth-consumer">
+<h1>django-oauth-consumer<a class="headerlink" href="#django-oauth-consumer" title="Permalink to this headline">¶</a></h1>
+<p>A <a class="reference external" href="http://www.djangoproject.com/">django</a> application providing
+infrastructure for <strong>consuming</strong> OAuth services. It is <strong>not</strong> for <em>providing</em>
+OAuth services.</p>
+<p>The code is hosted
+<a class="reference external" href="http://github.com/nshah/django-oauth-consumer/tree/master">here at github</a>.
+The latest code can be downloaded as a
+<a class="reference external" href="http://github.com/nshah/django-oauth-consumer/zipball/master">zip file</a> or a
+<a class="reference external" href="http://github.com/nshah/django-oauth-consumer/tarball/master">tarball</a>.</p>
+<p>Requires Python 2.6 or newer and:</p>
+<blockquote>
+<ul class="simple">
+<li><a class="reference external" href="http://github.com/django/django/tree/master">django</a></li>
+<li><a class="reference external" href="http://code.daaku.org/python-make-request/">python-make-request</a></li>
+<li><a class="reference external" href="http://code.daaku.org/python-oauth/">python-oauth</a></li>
+<li><a class="reference external" href="http://code.daaku.org/python-urlencoding/">python-urlencoding</a></li>
+</ul>
+</blockquote>
+<p>Can be installed using <a class="reference external" href="http://pip.openplans.org/">pip</a>:</p>
+<div class="highlight-python"><pre>pip install -r http://code.daaku.org/django-oauth-consumer/reqs</pre>
+</div>
+<div class="section" id="oauthconsumerapp">
+<h2>OAuthConsumerApp<a class="headerlink" href="#oauthconsumerapp" title="Permalink to this headline">¶</a></h2>
+<p>Multiple OAuth services are supported by creating an application for each
+service provider you need to access. This application is an instance of
+OAuthConsumerApp. It is bound to some configuration and has a name which must
+be unique across all OAuthConsumerApp instances.</p>
+<p>This application instance gives you the ability to:</p>
+<blockquote>
+<ul class="simple">
+<li>Make signed requests (2 &amp; 3 legged)</li>
+<li>Validate incoming (2 legged) signed requests</li>
+<li>Handle the access token flow</li>
+</ul>
+</blockquote>
+<p>In order to use this application, you must:</p>
+<blockquote>
+<ul class="simple">
+<li>Create an instance of OAuthConsumerApp</li>
+<li>Include the urls from that instance in your urlconf</li>
+<li><em>Optional.</em> Provide some templates. Which one depends on your needs.</li>
+</ul>
+</blockquote>
+<dl class="class">
+<dt id="django_oauth_consumer.OAuthConsumerApp">
+<!--[django_oauth_consumer.OAuthConsumerApp]-->class <tt class="descclassname">django_oauth_consumer.</tt><tt class="descname">OAuthConsumerApp</tt><big>(</big><em>name</em>, <em>consumer_key=None</em>, <em>consumer_secret=None</em>, <em>request_token_url=None</em>, <em>authorization_url=None</em>, <em>access_token_url=None</em>, <em>realm=None</em>, <em>signature_method=None</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp" title="Permalink to this definition">¶</a></dt>
+<dd><p>Provides OAuth Consumer functionality for Django. Depending on your use of
+the library, some of these arguments can be ignored. But most likely you&#8217;ll
+need to supply all of them.</p>
+<p>Arguments:</p>
+<blockquote>
+<dl class="docutils">
+<dt><cite>name</cite></dt>
+<dd><strong>Required</strong>. This is used in making this application instance
+unique. Make sure you dont use the same name for different instances
+of OAuthConsumerApp.</dd>
+<dt><cite>consumer_key</cite></dt>
+<dd><p class="first">The consumer key issued to you by the service provider.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#rfc.section.4.3">http://oauth.net/core/1.0/#rfc.section.4.3</a></p>
+</dd>
+<dt><cite>consumer_secret</cite></dt>
+<dd><p class="first">The consumer secret issued to you by the service provider.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#rfc.section.4.3">http://oauth.net/core/1.0/#rfc.section.4.3</a></p>
+</dd>
+<dt><cite>request_token_url</cite></dt>
+<dd><p class="first">The URL to fetch request tokens from.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#request_urls">http://oauth.net/core/1.0/#request_urls</a></p>
+</dd>
+<dt><cite>authorization_url</cite></dt>
+<dd><p class="first">The URL to redirect the user to for obtaining Authorization.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#request_urls">http://oauth.net/core/1.0/#request_urls</a></p>
+</dd>
+<dt><cite>access_token_url</cite></dt>
+<dd><p class="first">The URL to exchange the authorized request token for an access
+token.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#request_urls">http://oauth.net/core/1.0/#request_urls</a></p>
+</dd>
+<dt><cite>realm</cite></dt>
+<dd><p class="first">Optional realm for the Authorization header.</p>
+<p class="last"><a class="reference external" href="http://oauth.net/core/1.0/#rfc.section.5.4.2">http://oauth.net/core/1.0/#rfc.section.5.4.2</a></p>
+</dd>
+<dt><cite>signature_method</cite></dt>
+<dd><p class="first">A Signature Method for use with the OAuth flow. Defaults to</p>
+<blockquote class="last">
+<cite>oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1</cite></blockquote>
+</dd>
+</dl>
+</blockquote>
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.store_access_token">
+<!--[django_oauth_consumer.OAuthConsumerApp.store_access_token]--><tt class="descname">store_access_token</tt><big>(</big><em>request</em>, <em>token</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.store_access_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>This must store an access token (a dict).</p>
+<p>This can be overridden to allow alternate storage mechanisms.</p>
+<p>Default is session based storage.</p>
+</dd></dl>
 
-    <div class="download">
-      <a href="http://github.com/nshah/django-oauth-consumer/zipball/master">
-        <img border="0" width="90" src="http://github.com/images/modules/download/zip.png"></a>
-      <a href="http://github.com/nshah/django-oauth-consumer/tarball/master">
-        <img border="0" width="90" src="http://github.com/images/modules/download/tar.png"></a>
-    </div>
-      
-    <h1><a href="http://github.com/nshah/django-oauth-consumer">django-oauth-consumer</a> 
-      <span class="small">by <a href="http://github.com/nshah">nshah</a></small></h1>
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.get_access_token">
+<!--[django_oauth_consumer.OAuthConsumerApp.get_access_token]--><tt class="descname">get_access_token</tt><big>(</big><em>request</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.get_access_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>This must return an access token (a dict) or raise NoAccessToken.</p>
+<p>This can be overridden to allow alternate storage mechanisms.
+Make sure to raise NoAccessToken() if an access token is not found.</p>
+<p>Default is session based storage.</p>
+</dd></dl>
 
-    <div class="description">
-      
-    </div>
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.start_access_token_flow">
+<!--[django_oauth_consumer.OAuthConsumerApp.start_access_token_flow]--><tt class="descname">start_access_token_flow</tt><big>(</big><em>request</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.start_access_token_flow" title="Permalink to this definition">¶</a></dt>
+<dd>This triggers the access token flow <strong>without</strong> checking if an access
+token already exists. That&#8217;s your job. It returns a HttpResponse.</dd></dl>
 
-    <h2>Authors</h2>
-<p>Naitik Shah (naitik.shah@yahoo.com)<br/><br/>      </p>
-<h2>Contact</h2>
-<p>Naitik Shah (naitik.shah@yahoo.com)<br/>      </p>
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.require_access_token">
+<!--[django_oauth_consumer.OAuthConsumerApp.require_access_token]--><tt class="descname">require_access_token</tt><big>(</big><em>view</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.require_access_token" title="Permalink to this definition">¶</a></dt>
+<dd>A decorator for views that require an Access Token. This will ensure
+that you have an access token by automatically triggering the access
+token flow if needed before the view gets processed.</dd></dl>
+
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.make_signed_req">
+<!--[django_oauth_consumer.OAuthConsumerApp.make_signed_req]--><tt class="descname">make_signed_req</tt><big>(</big><em>url</em>, <em>method='GET'</em>, <em>content={}</em>, <em>headers={}</em>, <em>token=None</em>, <em>request=None</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.make_signed_req" title="Permalink to this definition">¶</a></dt>
+<dd><p>Identical to the make_request API, and accepts an additional (optional)
+token parameter and request object (required if dealing with Scalable
+OAuth service providers). It adds the OAuth Authorization header based
+on the consumer set on this instance. If content not a Mapping object,
+it will be ignored with respect to signing. This means you need to
+either pass the query parameters as a dict/Mapping object, or pass a
+encoded query string as part of the URL which will be extracted and
+included in the signature.</p>
+<p><a class="reference external" href="http://oauth.net/core/1.0/#rfc.section.7">http://oauth.net/core/1.0/#rfc.section.7</a></p>
+<p>Arguments:</p>
+<blockquote>
+<dl class="docutils">
+<dt><cite>url</cite></dt>
+<dd>The URL - query parameters will be parsed out.</dd>
+<dt><cite>method</cite></dt>
+<dd>The HTTP method to use.</dd>
+<dt><cite>content</cite></dt>
+<dd>A dict of key/values or string/unicode value.</dd>
+<dt><cite>headers</cite></dt>
+<dd>A dict of headers.</dd>
+<dt><cite>token</cite></dt>
+<dd>An optional access token. If this is provided, you will be
+making a 3-legged request. If it is missing, you will be making
+a 2-legged request.</dd>
+<dt><cite>request</cite></dt>
+<dd><p class="first"><em>Optional</em>. Needed if using Scalable OAuth in order to
+transparently handle access token renewal.</p>
+<p class="last"><a class="reference external" href="http://wiki.oauth.net/ScalableOAuth#AccessTokenRenewal">http://wiki.oauth.net/ScalableOAuth#AccessTokenRenewal</a></p>
+</dd>
+</dl>
+</blockquote>
+</dd></dl>
+
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.is_valid_signature">
+<!--[django_oauth_consumer.OAuthConsumerApp.is_valid_signature]--><tt class="descname">is_valid_signature</tt><big>(</big><em>request</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.is_valid_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>Validates the incoming <strong>2 legged</strong> signed request. This is useful for
+signed requests from OpenSocial Containers such as YAP.</p>
+<p>It calls OAuthRequest.validate_signature which throws an OAuthError if
+the signature validation fails.</p>
+<p><strong>FIXME</strong> Missing nonce validation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.validate_signature">
+<!--[django_oauth_consumer.OAuthConsumerApp.validate_signature]--><tt class="descname">validate_signature</tt><big>(</big><em>view</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.validate_signature" title="Permalink to this definition">¶</a></dt>
+<dd><p>A decorator for Django views to validate incoming signed requests.
+This is for <strong>2 legged</strong> signed requests. This is useful for requests
+from OpenSocial Containers such as YAP.</p>
+<p>It will render this template when it recieves an invalid signature:</p>
+<blockquote>
+<cite>django_oauth_consumer/{NAME}/invalid_signature.html</cite></blockquote>
+<p><strong>FIXME</strong> Missing nonce validation.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.need_authorization">
+<!--[django_oauth_consumer.OAuthConsumerApp.need_authorization]--><tt class="descname">need_authorization</tt><big>(</big><em>request</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.need_authorization" title="Permalink to this definition">¶</a></dt>
+<dd><p>The view that triggers the access token flow by sending the user to the
+authorization url. If you wish to show the user a message, you may
+provide a template named:</p>
+<blockquote>
+<cite>django_oauth_consumer/{NAME}/need_authorization.html</cite></blockquote>
+<p>The template will be provided an <cite>authorization_url</cite> in the context.</p>
+<p>If you do not provide a template, the user will be redirected there
+immediately.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="django_oauth_consumer.OAuthConsumerApp.success_auth">
+<!--[django_oauth_consumer.OAuthConsumerApp.success_auth]--><tt class="descname">success_auth</tt><big>(</big><em>request</em>, <em>oauth_token=None</em><big>)</big><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.success_auth" title="Permalink to this definition">¶</a></dt>
+<dd><p>The view that handles a successful OAuth Authorization flow from the
+user&#8217;s side. The Service Provider redirect returns the user here.
+If you wish to show the user a message here before continuing to the
+original URL that triggered the access token flow, you may provide a
+template named:</p>
+<blockquote>
+<cite>django_oauth_consumer/{NAME}/successful_authorization.html</cite></blockquote>
+<p>The template will be provided the <cite>access_token</cite> and the <cite>next_url</cite>
+(the original URL the user visited that triggered the access token
+flow).</p>
+<p>If you do not provide a template, the view will simply redirect the
+user back to the original URL.</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="django_oauth_consumer.OAuthConsumerApp.urls">
+<!--[django_oauth_consumer.OAuthConsumerApp.urls]--><tt class="descname">urls</tt><a class="headerlink" href="#django_oauth_consumer.OAuthConsumerApp.urls" title="Permalink to this definition">¶</a></dt>
+<dd>Provides the urls for this application instance. These must be included
+for the access token flow to work.</dd></dl>
+
+</dd></dl>
+
+</div>
+</div>
 
 
-    <h2>Download</h2>
-    <p>
-      You can download this project in either
-      <a href="http://github.com/nshah/django-oauth-consumer/zipball/master">zip</a> or
-      <a href="http://github.com/nshah/django-oauth-consumer/tarball/master">tar</a> formats.
-    </p>
-    <p>You can also clone the project with <a href="http://git-scm.com">Git</a>
-      by running:
-      <pre>$ git clone git://github.com/nshah/django-oauth-consumer</pre>
-    </p>
-      
-    <div class="footer">
-      get the source code on GitHub : <a href="http://github.com/nshah/django-oauth-consumer">nshah/django-oauth-consumer</a>
-    </div>
-    
-  </div>
+        </div>
 
-  
-</body>
+        <script type="text/javascript">
+        var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+        document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+        </script>
+        <script type="text/javascript">
+        try {
+            var pageTracker = _gat._getTracker("UA-7621205-1");
+            pageTracker._trackPageview();
+        } catch(err) {}
+        </script>
+    </body>
 </html>
