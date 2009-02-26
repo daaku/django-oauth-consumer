@@ -2,7 +2,7 @@ from django.conf.urls.defaults import patterns, url
 from django.core.urlresolvers import reverse, get_callable
 from django.http import HttpResponseRedirect
 from django.shortcuts import render_to_response as render
-from django.template import RequestContext
+from django.template import RequestContext, TemplateDoesNotExist
 from functools import wraps
 from make_request import make_request
 import cgi
@@ -25,7 +25,45 @@ class NoAccessToken(Exception):
 
 class OAuthConsumerApp(object):
     """
-    Provides OAuth Consumer functionality for Django.
+    Provides OAuth Consumer functionality for Django. Depending on your use of
+    the library, some of these arguments can be ignored. But most likely you'll
+    need to supply all of them.
+
+    Arguments:
+
+        `name`
+            *Required*. This is used in making this application instance
+            unique. Make sure you dont use the same name for multiple instances
+            of OAuthConsumerApp.
+
+        `consumer_key`
+            The consumer key issued to you by the service provider.
+            http://oauth.net/core/1.0/#rfc.section.4.3
+
+        `consumer_secret`
+            The consumer secret issued to you by the service provider.
+            http://oauth.net/core/1.0/#rfc.section.4.3
+
+        `request_token_url`
+            The URL to fetch request tokens from.
+            http://oauth.net/core/1.0/#request_urls
+
+        `authorization_url`
+            The URL to redirect the user to for obtaining Authorization.
+            http://oauth.net/core/1.0/#request_urls
+
+        `access_token_url`
+            The URL to exchange the authorized request token for an access
+            token.
+
+        `realm`
+            Optional realm for the Authorization header.
+            http://oauth.net/core/1.0/#rfc.section.5.4.2
+
+        `signature_method`
+            A Signature Method for use with the OAuth flow. Defaults to
+
+                oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1
 
     """
 
@@ -52,6 +90,12 @@ class OAuthConsumerApp(object):
         self.SUCCESS_VIEW_NAME = name + '_success'
         self.ACCESS_TOKEN_NAME = name + '_access_token'
         self.REQUEST_TOKEN_NAME = name + '_request_token'
+        self.NEXT_URL_NAME = name + '_next_url'
+
+        # these are used to decide if the application will do a redirect or
+        # show a template with the respective views
+        self._has_needs_auth_template = True
+        self._has_success_auth_template = True
 
         try:
             self.sig_method = get_callable(signature_method or DEFAULT_SIGNATURE_METHOD)
@@ -60,12 +104,21 @@ class OAuthConsumerApp(object):
 
     @property
     def urls(self):
+        """
+        Provides the urls for this application instance. These must be included
+        for the access token flow to work.
+
+        """
         return patterns('',
             url(r'^auth/', self.need_authorization, name=self.NEEDS_AUTH_VIEW_NAME),
             url(r'^success/(?P<oauth_token>.*)/', self.success_auth, name=self.SUCCESS_VIEW_NAME),
         )
 
-    def render(self, template, request, context):
+    def _render(self, template, request, context):
+        """
+        Helper method to render name specific templates.
+
+        """
         path = 'django_oauth_consumer/%s/%s.html' % (self.name, template)
         return render(path, context, context_instance=RequestContext(request))
 
@@ -79,6 +132,32 @@ class OAuthConsumerApp(object):
         either pass the query parameters as a dict/Mapping object, or pass a
         encoded query string as part of the URL which will be extracted and
         included in the signature.
+
+        http://oauth.net/core/1.0/#rfc.section.7
+
+        Arguments:
+
+            `url`
+                The URL - query parameters will be parsed out.
+
+            `method`
+                The HTTP method to use.
+
+            `content`
+                A dict of key/values or string/unicode value.
+
+            `headers`
+                A dict of headers.
+
+            `token`
+                An optional access token. If this is provided, you will be
+                making a 3-legged request. If it is missing, you will be making
+                a 2-legged request.
+
+            `request`
+                *Optional*. Needed if using Scalable OAuth in order to
+                transparently handle access token renewal.
+                http://wiki.oauth.net/ScalableOAuth#AccessTokenRenewal
 
         """
 
@@ -117,6 +196,9 @@ class OAuthConsumerApp(object):
         Validates the incoming *2 legged* signed request. This is useful for
         signed requests from OpenSocial Containers such as YAP.
 
+        It calls OAuthRequest.validate_signature which throws an OAuthError if
+        the signature validation fails.
+
         """
         oauth_request = oauth.OAuthRequest(
             request.build_absolute_uri(request.path),
@@ -132,6 +214,10 @@ class OAuthConsumerApp(object):
         This is for *2 legged* signed requests. This is useful for requests
         from OpenSocial Containers such as YAP.
 
+        It will render this template when it recieves an invalid signature:
+
+            `django_oauth_consumer/{NAME}/invalid_signature.html`
+
         """
         @wraps(view)
         def _do(request, *args, **kwargs):
@@ -140,7 +226,7 @@ class OAuthConsumerApp(object):
                 return view(request, *args, **kwargs)
             except oauth.OAuthError, e:
                 logging.info('Invalid Signature')
-                return self.render('invalid_signature', request, {'error': e})
+                return self._render('invalid_signature', request, {'error': e})
         return _do
 
     def get_access_token(self, request):
@@ -171,15 +257,14 @@ class OAuthConsumerApp(object):
         exists. That's your job.
 
         """
-        request.session[self.name + '_next_url'] = request.get_full_path()
+        request.session[self.NEXT_URL_NAME] = request.get_full_path()
         return HttpResponseRedirect(reverse(self.NEEDS_AUTH_VIEW_NAME))
 
     def require_access_token(self, view):
         """
-        A decorator for Django views that require an Access Token. It will make
-        the access token available as request.session['{NAME}_access_token']
-        where NAME was defined in the instance configuration. If an Access
-        Token is not available, it will redirect to need_authorization.
+        A decorator for views that require an Access Token. This will ensure
+        that you have an access token by automatically triggering the access
+        token flow.
 
         """
         @wraps(view)
@@ -194,11 +279,16 @@ class OAuthConsumerApp(object):
 
     def need_authorization(self, request):
         """
-        A View that fetches a request token from the service provider and
-        renders the need_authorization template.
+        The view that triggers the access token flow by sending the user to the
+        authorization url. If you wish to show the user a message, you may
+        provide a template named:
 
-        Renders
-            "django_oauth_consumer/{NAME}/need_authorization.html"
+            `django_oauth_consumer/{NAME}/need_authorization.html`
+
+        The template will be provided an `authorization_url` in the context.
+
+        If you do not provide a template, the user will be redirected there
+        immediately.
 
         """
 
@@ -219,12 +309,30 @@ class OAuthConsumerApp(object):
                 url += '&' + qs
         else:
             url += '?' + qs
-        return self.render('need_authorization', request, {'authorization_url': url})
+
+        if self._has_needs_auth_template:
+            try:
+                return self._render('need_authorization', request, {'authorization_url': url})
+            except TemplateDoesNotExist:
+                self._has_needs_auth_template = False
+        return HttpResponseRedirect(url)
 
     def success_auth(self, request, oauth_token=None):
         """
-        A Django view to handle a successful OAuth Authorization flow from the
+        The view that handles a successful OAuth Authorization flow from the
         user's side. The Service Provider redirect returns the user here.
+        If you wish to show the user a message here before continuing to the
+        original URL that triggered the access token flow, you may provide a
+        template named:
+
+            `django_oauth_consumer/{NAME}/successful_authorization.html`
+
+        The template will be provided the `access_token` and the `next_url`
+        (the original URL the user visited that triggered the access token
+        flow).
+
+        If you do not provide a template, the view will simply redirect the
+        user back to the original URL.
 
         """
         request_token = request.session[self.REQUEST_TOKEN_NAME]
@@ -235,8 +343,14 @@ class OAuthConsumerApp(object):
         access_token = urlencoding.parse_qs(body)
         self.store_access_token(request, access_token)
         del request.session[self.REQUEST_TOKEN_NAME]
+        next_url = request.session.pop(self.NEXT_URL_NAME)
 
-        return self.render('successful_authorization', request, {
-            'access_token': access_token,
-            'next_url': request.session[self.name + '_next_url'],
-        })
+        if self._has_success_auth_template:
+            try:
+                return self._render('successful_authorization', request, {
+                    'access_token': access_token,
+                    'next_url': next_url,
+                })
+            except TemplateDoesNotExist:
+                self._has_success_auth_template = False
+        return HttpResponseRedirect(next_url)
