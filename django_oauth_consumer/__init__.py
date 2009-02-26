@@ -29,25 +29,32 @@ class OAuthConsumerApp(object):
 
     """
 
-    def __init__(self, config):
-        self.name = config['name']
+    def __init__(self, name, consumer_key=None, consumer_secret=None,
+            request_token_url=None, authorization_url=None,
+            access_token_url=None, realm=None, signature_method=None):
+        """
+        Initialize an application instance based on the given configuration.
+
+        """
+
+        self.name = name
         self.consumer = {
-            'oauth_token': config.get('consumer_key'),
-            'oauth_token_secret': config.get('consumer_secret'),
+            'oauth_token': consumer_key,
+            'oauth_token_secret': consumer_secret,
         }
-        self.request_token_url = config.get('request_token_url')
-        self.authorization_url = config.get('authorization_url')
-        self.access_token_url = config.get('access_token_url')
-        self.realm = config.get('realm')
+        self.request_token_url = request_token_url
+        self.authorization_url = authorization_url
+        self.access_token_url = access_token_url
+        self.realm = realm
 
         # dynamic constants ;)
-        self.NEEDS_AUTH_VIEW_NAME = self.name + '_needs_auth'
-        self.SUCCESS_VIEW_NAME = self.name + '_success'
-        self.ACCESS_TOKEN_NAME = self.name + '_access_token'
-        self.REQUEST_TOKEN_NAME = self.name + '_request_token'
+        self.NEEDS_AUTH_VIEW_NAME = name + '_needs_auth'
+        self.SUCCESS_VIEW_NAME = name + '_success'
+        self.ACCESS_TOKEN_NAME = name + '_access_token'
+        self.REQUEST_TOKEN_NAME = name + '_request_token'
 
         try:
-            self.sig_method = get_callable(config.get('signature_method', DEFAULT_SIGNATURE_METHOD))
+            self.sig_method = get_callable(signature_method or DEFAULT_SIGNATURE_METHOD)
         except KeyError:
             raise UnknownSignatureMethod()
 
