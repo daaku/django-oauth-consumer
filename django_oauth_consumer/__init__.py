@@ -1,20 +1,27 @@
-import urllib, urlparse, cgi, logging
-from functools import wraps
-import urlencoding
-import oauth
-import collections
-from make_request import make_request
-
 from django.conf.urls.defaults import patterns, url
-from django.template import RequestContext
-from django.shortcuts import render_to_response as render
 from django.core.urlresolvers import reverse, get_callable
-from django.dispatch import Signal
 from django.http import HttpResponseRedirect
+from django.shortcuts import render_to_response as render
+from django.template import RequestContext
+from functools import wraps
+from make_request import make_request
+import cgi
+import collections
+import logging
+import oauth
+import urlencoding
+import urllib
+import urlparse
 
 
 DEFAULT_SIGNATURE_METHOD = 'oauth.signature_method.hmac_sha1.OAuthSignatureMethod_HMAC_SHA1'
 
+class NoAccessToken(Exception):
+    """
+    Raised when get_access_token cannot find a token.
+
+    """
+    pass
 
 class OAuthConsumerApp(object):
     """
@@ -43,8 +50,6 @@ class OAuthConsumerApp(object):
             self.sig_method = get_callable(config.get('signature_method', DEFAULT_SIGNATURE_METHOD))
         except KeyError:
             raise UnknownSignatureMethod()
-
-        self.got_access_token = Signal(providing_args=["service_provider", "access_token", "request"])
 
     @property
     def urls(self):
@@ -94,14 +99,7 @@ class OAuthConsumerApp(object):
             )
             body = unicode(response.read(), 'utf8').strip()
             new_token = urlencoding.parse_qs(body)
-            request.session[self.ACCESS_TOKEN_NAME] = new_token
-
-            self.got_access_token.send(
-                sender=self,
-                service_provider=self.name,
-                access_token=new_token,
-                request=request,
-            )
+            self.store_access_token(request, new_token)
 
             return self.make_signed_req(url, method, content, headers, new_token, request)
         else:
@@ -124,6 +122,8 @@ class OAuthConsumerApp(object):
     def validate_signature(self, view):
         """
         A decorator for Django views to validate incoming signed requests.
+        This is for *2 legged* signed requests. This is useful for requests
+        from OpenSocial Containers such as YAP.
 
         """
         @wraps(view)
@@ -136,6 +136,37 @@ class OAuthConsumerApp(object):
                 return self.render('invalid_signature', request, {'error': e})
         return _do
 
+    def get_access_token(self, request):
+        """
+        This can be overridden to allow alternate storage mechanisms.
+        Make sure to raise NoAccessToken() if one is not found.
+
+        Default is session based storage.
+
+        """
+        if self.ACCESS_TOKEN_NAME in request.session:
+            return request.session[self.ACCESS_TOKEN_NAME]
+        else:
+            raise NoAccessToken()
+
+    def store_access_token(self, request, token):
+        """
+        This can be overridden to allow alternate storage mechanisms.
+
+        Default is session based storage.
+
+        """
+        request.session[self.ACCESS_TOKEN_NAME] = token
+
+    def start_access_token_flow(self, request):
+        """
+        This triggers the access token flow *without* checking if one already
+        exists. That's your job.
+
+        """
+        request.session[self.name + '_next_url'] = request.get_full_path()
+        return HttpResponseRedirect(reverse(self.NEEDS_AUTH_VIEW_NAME))
+
     def require_access_token(self, view):
         """
         A decorator for Django views that require an Access Token. It will make
@@ -146,18 +177,18 @@ class OAuthConsumerApp(object):
         """
         @wraps(view)
         def _do(request, *args, **kwargs):
-            if self.ACCESS_TOKEN_NAME in request.session:
+            try:
+                access_token = self.get_access_token(request)
                 return view(request, *args, **kwargs)
-            else:
-                request.session[self.name + '_next_url'] = request.get_full_path()
-                return HttpResponseRedirect(reverse(self.NEEDS_AUTH_VIEW_NAME))
+            except NoAccessToken:
+                return self.start_access_token_flow(request)
 
         return _do
 
     def need_authorization(self, request):
         """
-        Fetches a request token from the service provider and renders the
-        need_authorization template.
+        A View that fetches a request token from the service provider and
+        renders the need_authorization template.
 
         Renders
             "django_oauth_consumer/{NAME}/need_authorization.html"
@@ -195,15 +226,8 @@ class OAuthConsumerApp(object):
         response = self.make_signed_req(self.access_token_url, token=request_token)
         body = unicode(response.read(), 'utf8').strip()
         access_token = urlencoding.parse_qs(body)
-        request.session[self.ACCESS_TOKEN_NAME] = access_token
+        self.store_access_token(request, access_token)
         del request.session[self.REQUEST_TOKEN_NAME]
-
-        self.got_access_token.send(
-            sender=self,
-            service_provider=self.name,
-            access_token=access_token,
-            request=request,
-        )
 
         return self.render('successful_authorization', request, {
             'access_token': access_token,
