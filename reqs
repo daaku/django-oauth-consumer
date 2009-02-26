@@ -1,0 +1,4 @@
+-e git://github.com/django/django.git#egg=django
+-e git://github.com/nshah/python-make-request.git#egg=make_request
+-e git://github.com/nshah/python-urlencoding.git#egg=urlencoding
+-e git://github.com/nshah/python-oauth.git#egg=oauth
